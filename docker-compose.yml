@@ -1,0 +1,102 @@
+networks:
+  raft-net:
+    driver: bridge
+
+services:
+
+  # ── FRONTEND ──────────────────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:80"
+    networks:
+      - raft-net
+    depends_on:
+      - gateway
+    restart: unless-stopped
+
+  # ── GATEWAY ───────────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ./gateway
+      dockerfile: Dockerfile
+    container_name: gateway
+    hostname: gateway
+    environment:
+      - PORT=4000
+      - NODE_ENV=production
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./gateway:/app
+      - /app/node_modules
+    networks:
+      - raft-net
+    depends_on:
+      - replica1
+      - replica2
+      - replica3
+    restart: unless-stopped
+
+  # ── REPLICA 1 ─────────────────────────────────────────────────────────────────
+  replica1:
+    build:
+      context: ./replica1
+      dockerfile: Dockerfile
+    container_name: replica1
+    hostname: replica1
+    environment:
+      - NODE_ID=replica-1
+      - PORT=5001
+      - GATEWAY_URL=http://gateway:4000
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./replica1:/app
+      - /app/node_modules
+    networks:
+      - raft-net
+    restart: unless-stopped
+
+  # ── REPLICA 2 ─────────────────────────────────────────────────────────────────
+  replica2:
+    build:
+      context: ./replica2
+      dockerfile: Dockerfile
+    container_name: replica2
+    hostname: replica2
+    environment:
+      - NODE_ID=replica-2
+      - PORT=5002
+      - GATEWAY_URL=http://gateway:4000
+    ports:
+      - "5002:5002"
+    volumes:
+      - ./replica2:/app
+      - /app/node_modules
+    networks:
+      - raft-net
+    restart: unless-stopped
+
+  # ── REPLICA 3 ─────────────────────────────────────────────────────────────────
+  replica3:
+    build:
+      context: ./replica3
+      dockerfile: Dockerfile
+    container_name: replica3
+    hostname: replica3
+    environment:
+      - NODE_ID=replica-3
+      - PORT=5003
+      - GATEWAY_URL=http://gateway:4000
+    ports:
+      - "5003:5003"
+    volumes:
+      - ./replica3:/app
+      - /app/node_modules
+    networks:
+      - raft-net
+    restart: unless-stopped
