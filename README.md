@@ -89,3 +89,11 @@ MiniRaft-Final/
     ├── Dockerfile         # nginx
     └── index.html         # Canvas drawing app
 ```
+## Screenshots
+<img width="1470" height="814" alt="image" src="https://github.com/user-attachments/assets/cc4ef00e-5ea3-4757-8895-4476758f0625" />
+## Consistency maintained even when a follower or leader is stopped
+<img width="1459" height="730" alt="image" src="https://github.com/user-attachments/assets/7126e0e7-1626-407f-8a8c-63c10b0486bb" />
+## Gateway status
+<img width="834" height="71" alt="image" src="https://github.com/user-attachments/assets/3e219d4a-16eb-4025-bda3-2b1e334d2aac" />
+## 
+
