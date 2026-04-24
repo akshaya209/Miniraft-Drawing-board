@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mini-RAFT Drawing Board</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --leader-color: #3fb950;
+      --cand-color: #d29922;
+      --follower-color: #58a6ff;
+      --danger: #f85149;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Top bar ── */
+    #topbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    #brand { font-weight: 700; font-size: 18px; letter-spacing: .04em; color: var(--accent); }
+    #brand small { font-size: 11px; color: var(--muted); display: block; }
+
+    .status-pill {
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+    .status-pill.connected    { color: var(--leader-color); border-color: var(--leader-color); }
+    .status-pill.disconnected { color: var(--danger); border-color: var(--danger); }
+    .status-pill.connecting   { color: var(--cand-color); border-color: var(--cand-color); }
+
+    #cluster-info {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-left: auto;
+    }
+    .cluster-chip {
+      font-size: 12px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: rgba(255,255,255,.04);
+    }
+    .cluster-chip span { color: var(--muted); margin-right: 4px; }
+    .cluster-chip strong { color: var(--text); }
+
+    #node-chips { display: flex; gap: 6px; }
+    .node-chip {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    .node-chip.leader   { color: var(--leader-color); border-color: var(--leader-color); background: rgba(63,185,80,.08); }
+    .node-chip.follower { color: var(--follower-color); border-color: var(--follower-color); background: rgba(88,166,255,.08); }
+    .node-chip.candidate{ color: var(--cand-color); border-color: var(--cand-color); background: rgba(210,153,34,.08); }
+    .node-chip.offline  { color: var(--muted); border-color: var(--border); }
+
+    /* ── Main area ── */
+    #main {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+
+    /* ── Toolbar ── */
+    #toolbar {
+      width: 64px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px 0;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .tool-btn {
+      width: 40px; height: 40px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 18px;
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, border-color .15s;
+    }
+    .tool-btn:hover  { background: rgba(255,255,255,.06); border-color: var(--accent); }
+    .tool-btn.active { background: rgba(88,166,255,.15); border-color: var(--accent); color: var(--accent); }
+    .color-swatch {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      border: 2px solid transparent;
+      cursor: pointer;
+      transition: transform .15s;
+    }
+    .color-swatch:hover  { transform: scale(1.15); }
+    .color-swatch.active { border-color: white; }
+
+    .tool-sep {
+      width: 32px;
+      height: 1px;
+      background: var(--border);
+      margin: 4px 0;
+    }
+
+    #size-slider {
+      writing-mode: vertical-lr;
+      direction: rtl;
+      width: 4px;
+      height: 80px;
+      cursor: pointer;
+      accent-color: var(--accent);
+    }
+
+    /* ── Canvas ── */
+    #canvas-wrap {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #1a1f28;
+      overflow: hidden;
+      position: relative;
+    }
+    #canvas {
+      background: #ffffff;
+      border-radius: 4px;
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    /* ── Notifications ── */
+    #toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 16px;
+      font-size: 13px;
+      color: var(--text);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .3s;
+      z-index: 999;
+    }
+    #toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="topbar">
+  <div id="brand">⬡ RAFT<small>CANVAS</small></div>
+
+  <div id="conn-status" class="status-pill disconnected">● DISCONNECTED</div>
+
+  <div id="cluster-info">
+    <div class="cluster-chip"><span>LEADER</span><strong id="leader-display">—</strong></div>
+    <div class="cluster-chip"><span>TERM</span><strong id="term-display">0</strong></div>
+    <div id="node-chips">
+      <div class="node-chip offline" id="chip-replica-1">R1</div>
+      <div class="node-chip offline" id="chip-replica-2">R2</div>
+      <div class="node-chip offline" id="chip-replica-3">R3</div>
+    </div>
+    <button id="clear-btn" class="tool-btn" title="Clear canvas" style="margin-left:8px;font-size:14px;">🗑 Clear</button>
+  </div>
+</div>
+
+<!-- Main -->
+<div id="main">
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <button class="tool-btn active" id="tool-pen" title="Pen">✏️</button>
+    <button class="tool-btn" id="tool-eraser" title="Eraser">⬜</button>
+    <div class="tool-sep"></div>
+    <!-- Colors -->
+    <div class="color-swatch active" style="background:#000000" data-color="#000000"></div>
+    <div class="color-swatch" style="background:#e53935" data-color="#e53935"></div>
+    <div class="color-swatch" style="background:#1e88e5" data-color="#1e88e5"></div>
+    <div class="color-swatch" style="background:#43a047" data-color="#43a047"></div>
+    <div class="color-swatch" style="background:#fb8c00" data-color="#fb8c00"></div>
+    <div class="color-swatch" style="background:#8e24aa" data-color="#8e24aa"></div>
+    <div class="tool-sep"></div>
+    <input id="size-slider" type="range" min="1" max="30" value="4" title="Brush size"/>
+  </div>
+
+  <!-- Canvas -->
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+// ── Config ─────────────────────────────────────────────────────────────────────
+const WS_URL         = `ws://${location.hostname}:4000`;
+const STATUS_POLL_MS = 2000;
+
+// ── Canvas setup ───────────────────────────────────────────────────────────────
+const canvas  = document.getElementById('canvas');
+const ctx     = canvas.getContext('2d');
+const wrap    = document.getElementById('canvas-wrap');
+
+function resizeCanvas() {
+  const w = wrap.clientWidth  - 40;
+  const h = wrap.clientHeight - 40;
+  canvas.width  = Math.min(w, 1200);
+  canvas.height = Math.min(h, 900);
+}
+resizeCanvas();
+window.addEventListener('resize', () => { resizeCanvas(); redrawAll(); });
+
+// ── Drawing state ──────────────────────────────────────────────────────────────
+let tool       = 'pen';
+let color      = '#000000';
+let size       = 4;
+let drawing    = false;
+let currentPts = [];
+let strokes    = [];    // committed strokes from server
+
+// ── Tool controls ──────────────────────────────────────────────────────────────
+document.getElementById('tool-pen').addEventListener('click', () => {
+  tool = 'pen';
+  canvas.style.cursor = 'crosshair';
+  document.getElementById('tool-pen').classList.add('active');
+  document.getElementById('tool-eraser').classList.remove('active');
+});
+document.getElementById('tool-eraser').addEventListener('click', () => {
+  tool = 'eraser';
+  canvas.style.cursor = 'cell';
+  document.getElementById('tool-eraser').classList.add('active');
+  document.getElementById('tool-pen').classList.remove('active');
+});
+document.querySelectorAll('.color-swatch').forEach(el => {
+  el.addEventListener('click', () => {
+    color = el.dataset.color;
+    document.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+    el.classList.add('active');
+    tool = 'pen';
+    document.getElementById('tool-pen').classList.add('active');
+    document.getElementById('tool-eraser').classList.remove('active');
+  });
+});
+document.getElementById('size-slider').addEventListener('input', e => {
+  size = parseInt(e.target.value, 10);
+});
+document.getElementById('clear-btn').addEventListener('click', () => {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'clear', id: msgId() }));
+  }
+});
+
+// ── Draw helpers ───────────────────────────────────────────────────────────────
+function drawStroke(stroke) {
+  if (!stroke || !stroke.points || stroke.points.length < 2) return;
+  ctx.save();
+  ctx.beginPath();
+  ctx.strokeStyle = stroke.eraser ? '#ffffff' : (stroke.color || '#000');
+  ctx.lineWidth   = stroke.size || 4;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+  ctx.globalCompositeOperation = stroke.eraser ? 'destination-out' : 'source-over';
+  ctx.moveTo(stroke.points[0].x * canvas.width, stroke.points[0].y * canvas.height);
+  for (let i = 1; i < stroke.points.length; i++) {
+    ctx.lineTo(stroke.points[i].x * canvas.width, stroke.points[i].y * canvas.height);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function redrawAll() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (const s of strokes) drawStroke(s);
+}
+
+// ── Canvas pointer events ──────────────────────────────────────────────────────
+function ptFromEvent(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) / canvas.width,
+    y: (e.clientY - rect.top)  / canvas.height,
+  };
+}
+
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  drawing    = true;
+  currentPts = [ptFromEvent(e)];
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drawing) return;
+  currentPts.push(ptFromEvent(e));
+  // Live preview
+  redrawAll();
+  const preview = { points: currentPts, color, size, eraser: tool === 'eraser' };
+  drawStroke(preview);
+});
+canvas.addEventListener('pointerup', () => {
+  if (!drawing) return;
+  drawing = false;
+  if (currentPts.length < 2) { currentPts = []; return; }
+  const stroke = { points: currentPts, color, size, eraser: tool === 'eraser' };
+  sendStroke(stroke);
+  currentPts = [];
+});
+
+// ── WebSocket ──────────────────────────────────────────────────────────────────
+let ws        = null;
+let reconnectDelay = 1000;
+let _msgId    = 0;
+function msgId() { return ++_msgId; }
+
+function setConnStatus(s) {
+  const el = document.getElementById('conn-status');
+  el.className = `status-pill ${s}`;
+  el.textContent = s === 'connected' ? '● CONNECTED' :
+                   s === 'connecting' ? '◌ CONNECTING' : '● DISCONNECTED';
+}
+
+function connect() {
+  setConnStatus('connecting');
+  ws = new WebSocket(WS_URL);
+
+  ws.addEventListener('open', () => {
+    setConnStatus('connected');
+    reconnectDelay = 1000;
+    showToast('Connected to gateway');
+  });
+
+  ws.addEventListener('message', e => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+
+    if (msg.type === 'init') {
+      strokes = msg.strokes || [];
+      redrawAll();
+      updateClusterStatus({ leaderId: msg.leaderId, term: msg.term });
+      return;
+    }
+    if (msg.type === 'stroke') {
+      // Deduplicate
+      if (msg.index && strokes.some(s => s._index === msg.index)) return;
+      const s = { ...msg.data, _index: msg.index };
+      strokes.push(s);
+      drawStroke(s);
+      return;
+    }
+    if (msg.type === 'clear') {
+      strokes = [];
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      return;
+    }
+    if (msg.type === 'cluster_status') {
+      updateClusterStatus(msg);
+      return;
+    }
+    if (msg.type === 'queued') {
+      showToast('Leader election in progress — stroke queued');
+      return;
+    }
+    if (msg.type === 'error') {
+      showToast(`Error: ${msg.message}`);
+      return;
+    }
+  });
+
+  ws.addEventListener('close', () => {
+    setConnStatus('disconnected');
+    ws = null;
+    setTimeout(connect, reconnectDelay);
+    reconnectDelay = Math.min(reconnectDelay * 1.5, 10000);
+  });
+
+  ws.addEventListener('error', () => { ws.close(); });
+}
+
+function sendStroke(stroke) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'stroke', id: msgId(), data: stroke }));
+  }
+}
+
+// ── Cluster status ─────────────────────────────────────────────────────────────
+function updateClusterStatus({ leaderId, term }) {
+  document.getElementById('leader-display').textContent = leaderId || '—';
+  if (term !== undefined) document.getElementById('term-display').textContent = term;
+}
+
+// Poll individual replica statuses
+async function pollReplicas() {
+  const replicas = [
+    { id: 'replica-1', port: 5001, chip: 'chip-replica-1' },
+    { id: 'replica-2', port: 5002, chip: 'chip-replica-2' },
+    { id: 'replica-3', port: 5003, chip: 'chip-replica-3' },
+  ];
+
+  for (const r of replicas) {
+    const chip = document.getElementById(r.chip);
+    try {
+      const resp = await fetch(`http://${location.hostname}:${r.port}/status`, { signal: AbortSignal.timeout(800) });
+      if (!resp.ok) throw new Error();
+      const data = await resp.json();
+      chip.className  = `node-chip ${data.role}`;
+      chip.textContent = `${data.id.replace('replica-', 'R')} ${data.role[0].toUpperCase()} T${data.term}`;
+    } catch {
+      chip.className  = 'node-chip offline';
+      chip.textContent = r.id.replace('replica-', 'R') + ' offline';
+    }
+  }
+}
+setInterval(pollReplicas, STATUS_POLL_MS);
+pollReplicas();
+
+// ── Toast ──────────────────────────────────────────────────────────────────────
+let _toastTimer = null;
+function showToast(msg, duration = 3000) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// ── Boot ───────────────────────────────────────────────────────────────────────
+connect();
+</script>
+</body>
+</html>
